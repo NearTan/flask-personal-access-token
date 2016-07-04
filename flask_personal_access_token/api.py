@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 
-from flask import Blueprint, current_app, jsonify, request
-from .model import PersonalAccessToken
+import pyotp
+from flask import Blueprint, current_app, jsonify, request, redirect, url_for
+from .model import PersonalAccessToken, TotpSecretKey
 
 bp = Blueprint('personal_access_token.api', __name__)
 
@@ -58,6 +59,44 @@ def update_token(id):
     token = token.update(description, scopes)
     return ok(token.to_dict())
 
+
+@bp.route('/totp_keys', methods=['GET', 'POST'])
+def totp_key():
+    user_id = bp.app.current_user_id
+    if request.method == 'GET':
+        key = TotpSecretKey.get_by_user(user_id=user_id)
+        if not key:
+            return ok([])
+        totp = pyotp.TOTP(key['secret_key'])
+        key['url'] = totp.provisioning_uri(str(user_id))
+        return ok([key])
+    else:
+        data = _get_form_data()
+        key = TotpSecretKey.get_by_user(user_id=user_id)
+        if key:
+            return bad_request()
+        TotpSecretKey.add(user_id=user_id, description=data['description'])
+        return ok()
+
+
+@bp.route('/totp_keys/<int:id>')
+def get_key(id):
+    key = TotpSecretKey.query.get(id)
+    error = _validate_token(key)
+    if error:
+        return error
+    data = key.to_dict()
+    return ok(data)
+
+
+@bp.route('/totp_keys/<int:id>', methods=['DELETE'])
+def delete_key(id):
+    key = TotpSecretKey.query.get(id)
+    error = _validate_token(key)
+    if error:
+        return error
+    key.delete()
+    return ok()
 
 
 def _get_form_data():

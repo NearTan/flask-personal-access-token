@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 from datetime import datetime
+
+import pyotp
 from werkzeug.security import generate_password_hash
 from .core import db
 
@@ -82,3 +84,53 @@ class PersonalAccessToken(db.Model):
         self.last_used_at = datetime.utcnow()
         db.session.add(self)
         db.session.commit()
+
+
+class TotpSecretKey(db.Model):
+
+    __tablename__ = 'totp_secret_key'
+    __table_args__ = (
+        db.UniqueConstraint('user_id', name='ux_user_id'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    secret_key = db.Column(db.String(40), nullable=False)
+    description = db.Column(db.String(64), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return dict(
+            id=self.id,
+            user_id=self.user_id,
+            secret_key=self.secret_key,
+            description=self.description
+        )
+
+    @classmethod
+    def get_by_user(cls, user_id):
+        obj = TotpSecretKey.query.filter_by(user_id=user_id).first()
+        return obj and obj.to_dict()
+
+    @classmethod
+    def add(cls, user_id, description):
+        obj = cls(
+            user_id=user_id,
+            secret_key=pyotp.random_base32(),
+            description=description
+        )
+        db.session.add(obj)
+        db.session.commit()
+        return obj
+
+    def delete(self):
+        db.session.delete(self)
+        db.session.commit()
+
+    @classmethod
+    def verify_code(cls, user_id, code):
+        obj = TotpSecretKey.get_by_user(user_id=user_id)
+        if not obj:
+            return False
+        totp = pyotp.TOTP(obj['secret_key'])
+        return totp.verify(code)
