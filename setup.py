@@ -21,6 +21,7 @@ setup(
     install_requires=[
         'Flask',
         'Flask-SQLAlchemy',
+        'pyotp'
     ],
     classifiers=[
         'Framework :: Flask',
